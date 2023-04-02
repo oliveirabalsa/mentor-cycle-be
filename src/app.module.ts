@@ -31,6 +31,7 @@ import { StaticFilesController } from '@modules/static-files-controller/static-f
         },
       },
       context: ({ req, res }) => ({ req, res }),
+      playground: true,
     }),
     PrismaModule,
     AuthenticationModule,
