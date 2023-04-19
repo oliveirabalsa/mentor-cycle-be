@@ -27,6 +27,7 @@ describe('UserService', () => {
             getByEmail: jest.fn(),
             count: jest.fn(),
             create: jest.fn(),
+            update: jest.fn(),
             findOneMentor: jest.fn(),
           },
         },
@@ -73,6 +74,7 @@ describe('UserService', () => {
       id: '1',
       firstName: 'John',
       lastName: 'Doe',
+      active: true,
       email: 'johndoe@example.com',
       password: 'Abc123!@#',
       photoUrl: 'https://example.com/johndoe.jpg',
@@ -164,6 +166,7 @@ describe('UserService', () => {
       );
     });
   });
+
   describe('signUpUser', () => {
     it('should throw ObjectAlreadyExistsError when a user with the same email already exists', async () => {
       const args = user;
@@ -194,6 +197,23 @@ describe('UserService', () => {
       );
       expect(result.user).toEqual(args);
       expect(result.token).toEqual('dummyToken');
+    });
+  });
+
+  describe('updateUserData', () => {
+    it('should update user data and generate a token when the user was found', async () => {
+      const args = user;
+      jest.spyOn(userRepository, 'update').mockResolvedValue(args);
+
+      const result = await userService.updateUserData(args);
+
+      const { isMentor, id, ...updateUserObj } = args;
+
+      expect(userRepository.update).toHaveBeenCalledWith(updateUserObj, {
+        id: '1',
+      });
+
+      expect(result).toEqual(args);
     });
   });
 

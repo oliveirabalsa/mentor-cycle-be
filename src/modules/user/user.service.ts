@@ -15,6 +15,7 @@ import {
   ResetPasswordUserDto,
   CheckPinUserDto,
   ResetPasswordSentDto,
+  UpdateUserDto,
 } from './dto';
 import { UserRepository } from './user.repository';
 import { passwordResetEmailProps } from '@providers/mails';
@@ -25,6 +26,7 @@ import { FindMentorInput } from './dto/find-mentor.dto';
 import { JWTProps } from './types';
 import { render } from '@react-email/components';
 import ResetPassword from '../../../emails/reset-password';
+import { ChangePasswordInputDto } from './dto/change-password.dto';
 
 @Injectable()
 export class UserService {
@@ -61,7 +63,7 @@ export class UserService {
 
     const findUser = await this.userRepository.getByEmail(email);
 
-    if (!findUser) {
+    if (!findUser || !findUser.active) {
       throw new AuthInvalidError({ field: 'email' });
     }
 
@@ -110,7 +112,6 @@ export class UserService {
         field: 'user',
       });
     }
-
     const password = await this.cryptService.encrypt(newPassword);
 
     const temporaryCodeInfo = await this.temporaryCodeRepository.getOne({
@@ -134,6 +135,35 @@ export class UserService {
     return true;
   }
 
+  async changePassword(
+    changePasswordInput: ChangePasswordInputDto,
+    expiresSession: number,
+  ) {
+    const { userId, oldPassword, newPassword } = changePasswordInput;
+    const findUser = await this.userRepository.getById(userId);
+    if (!findUser) {
+      throw new NotFoundError({
+        field: 'user',
+      });
+    }
+    const isPasswordCorrect = await this.cryptService.compare(
+      oldPassword,
+      findUser.password as string,
+    );
+    if (!isPasswordCorrect) {
+      throw new AuthInvalidError({ field: 'password' });
+    }
+    const password = await this.cryptService.encrypt(newPassword);
+    await this.userRepository.update({ password }, { id: userId });
+    const generateToken = this.generateToken(findUser, expiresSession);
+    return { token: generateToken, user: findUser };
+  }
+
+  async updateUserData(userData: UpdateUserDto) {
+    const user = await this.updateUser(userData);
+    delete user.password;
+    return user;
+  }
   private async checkPinUser(input: CheckPinUserDto) {
     const { email, pin } = input;
 
@@ -193,6 +223,17 @@ export class UserService {
     return true;
   }
 
+  async deactivateAccount(id: string) {
+    const user = await this.userRepository.getById(id);
+    if (!user) {
+      throw new NotFoundError({
+        field: 'user',
+      });
+    }
+    await this.userRepository.update({ active: false }, { id });
+    return true;
+  }
+
   private generateToken(user: User, expiresSession = 0) {
     return this.jwtService.sign(
       {
@@ -233,5 +274,12 @@ export class UserService {
 
   private createUser(args: CreateUserInput) {
     return this.userRepository.create(args);
+  }
+
+  private updateUser(updateUserObj: UpdateUserDto) {
+    const { password, isMentor, id, ...dataFromUserToBeUpdated } =
+      updateUserObj;
+
+    return this.userRepository.update(dataFromUserToBeUpdated, { id });
   }
 }
