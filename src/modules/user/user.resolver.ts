@@ -14,9 +14,17 @@ import { UserService } from './user.service';
 import { generateExpiresAt, setCookies } from '@common/utils';
 import { AuthGuard } from '@common/auth/auth.guard';
 import { ChangePasswordInputDto } from './dto/change-password.dto';
+import { S3 } from 'aws-sdk';
+import { FileUpload } from './dto/update-user-photo.dto';
+import GraphQLUpload = require('graphql-upload/GraphQLUpload.js');
 
 @Resolver('User')
 export class UserResolver {
+  private readonly s3 = new S3({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.S3_REGION,
+  });
   constructor(@Inject(UserService) private userService: UserService) {}
 
   @Query(() => [User], { name: 'findMentors' })
@@ -114,6 +122,28 @@ export class UserResolver {
     return true;
   }
 
+  @Mutation(() => Boolean)
+  async updateUserPhoto(
+    @Args({ name: 'file', type: () => GraphQLUpload })
+    file: FileUpload,
+    @Args('userId') userId: string,
+  ) {
+    const { createReadStream, mimetype, filename } = await file;
+
+    const result = await this.s3
+      .upload({
+        Bucket: process.env.S3_BUCKET,
+        Key: `user-photos/${userId}${filename}`,
+        Body: createReadStream(),
+        ContentType: mimetype,
+      })
+      .promise();
+
+    await this.userService.updateUserPhotoUrl(userId, result.Location);
+
+    return true;
+  }
+
   @UseGuards(AuthGuard)
   @Query(() => User, { name: 'me' })
   async me(@Context('req') req: Request) {
@@ -121,7 +151,25 @@ export class UserResolver {
     return this.userService.me(token);
   }
 
-  @UseGuards(AuthGuard)
+  @Query(() => Boolean, { name: 'isUserLogged' })
+  async isUserLogged(
+    @Context('req') req: Request,
+    @Context('res') res: Response,
+  ) {
+    const token = req.cookies['token'];
+    const isValidToken = await this.userService.isValidToken(token);
+    if (!isValidToken) {
+      res.clearCookie('token', {
+        httpOnly: true,
+        sameSite: 'none',
+        secure: true,
+        path: '/',
+      });
+      return false;
+    }
+    return true;
+  }
+
   @Mutation(() => Boolean)
   async resetUserPassword(
     @Args('userInput') resetUserInput: ResetPasswordUserDto,
@@ -129,7 +177,6 @@ export class UserResolver {
     return this.userService.resetPasswordUser(resetUserInput);
   }
 
-  @UseGuards(AuthGuard)
   @Mutation(() => Boolean)
   async sendResetPassword(@Args('email') email: string) {
     const validateEmail = isEmail(email);

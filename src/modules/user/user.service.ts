@@ -81,6 +81,16 @@ export class UserService {
     return { token: generateToken, user: findUser };
   }
 
+  async updateUserPhotoUrl(userId: string, photoUrl: string): Promise<void> {
+    const user = await this.userRepository.getById(userId);
+    if (!user) {
+      throw new NotFoundError({
+        field: 'user',
+      });
+    }
+    await this.userRepository.update({ photoUrl }, { id: userId });
+  }
+
   async signUpUser(args: CreateUserInput) {
     const countedUsers = await this.userRepository.count({ email: args.email });
 
@@ -246,6 +256,17 @@ export class UserService {
     return this.userRepository.findOneMentor(id);
   }
 
+  async isValidToken(token: string): Promise<boolean> {
+    try {
+      const decoded = await this.jwtService.verify(token, {
+        secret: process.env.SECRET,
+      });
+      return !!decoded.email;
+    } catch (error) {
+      return false;
+    }
+  }
+
   private async resetPasswordSent(input: ResetPasswordSentDto) {
     const { email, firstName: name, pin } = input;
     const redirectUrl = `${process.env.FRONTEND_URL}/change-password?email=${email}&pin=${pin}`;
@@ -270,8 +291,7 @@ export class UserService {
   }
 
   private updateUser(updateUserObj: UpdateUserDto) {
-    const { password, isMentor, id, ...dataFromUserToBeUpdated } =
-      updateUserObj;
+    const { password, id, ...dataFromUserToBeUpdated } = updateUserObj;
 
     return this.userRepository.update(dataFromUserToBeUpdated, { id });
   }
